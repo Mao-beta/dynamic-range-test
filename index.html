@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Dynamic Range Test</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html,body{margin:0;padding:0;height:100%;display:flex;flex-direction:column;
+            background:#7f7f7f;font-family:sans-serif;user-select:none}
+  /* ── 測定バー（枠なし）── */
+  #bar{flex:0 0 10vh;max-height:120px;margin:auto;width:85vw;border:none;
+       background:linear-gradient(to right,#fff 0%,#000 100%)}
+  #msg{margin:8px auto;font-size:1.1rem;color:#fff;text-shadow:0 0 3px #000}
+  #result{white-space:pre-wrap;text-align:center;font-size:1.1rem;color:#fff}
+  button{padding:0.35rem 1rem;font-size:1rem;margin:4px;border-radius:6px}
+</style>
+</head>
+<body>
+  <div id="msg"></div>
+  <div id="bar"></div>
+  <div id="result"></div>
+<script>
+(function(){ startSession(); })();                 // 初回測定
+
+function startSession(){
+  /* ==== メタ情報 ==== */
+  const haze      = prompt('ヘイズ量（例: 1〜6, A, Low など）','1') || 'NA';
+  const sessionId = 'S'+Date.now();
+  const dateISO   = new Date().toISOString();
+
+  /* ==== 状態 ==== */
+  const bgLuts  = ['#262626','#808080','#e0e0e0'];
+  const bgNames = ['dark','mid','bright'];
+  const TOTAL   = 21;
+  let phase='W', prevBg=-1;
+  const taps=[];
+
+  /* ==== 要素 ==== */
+  const bar=document.getElementById('bar');
+  const msg=document.getElementById('msg');
+  const res=document.getElementById('result');
+  res.textContent=''; document.querySelectorAll('button').forEach(b=>b.remove());
+  msg.textContent='白側 1 / 21 をタップしてください';
+  changeBg();
+
+  /* ==== タップ処理 ==== */
+  bar.onclick=e=>{
+    const ratio=+((e.clientX-bar.getBoundingClientRect().left)/bar.clientWidth).toFixed(6);
+    taps.push({sessionId,date:dateISO,haze,
+               tapSeq:taps.length+1,
+               side:phase==='W'?'white':'black',
+               background:bgNames[prevBg],ratio});
+
+    const nSide=taps.filter(t=>t.side=== (phase==='W'?'white':'black')).length;
+    if(nSide<TOTAL){
+      msg.textContent=`${phase==='W'?'白側':'黒側'} ${nSide+1} / ${TOTAL} をタップしてください`;
+    }else{
+      if(phase==='W'){                    // フェーズ切替
+        alert('黒側スタート');           // ← ここで入力がブロックされる
+        phase='B';
+        msg.textContent='黒側 1 / 21 をタップしてください';
+      }else finish();
+    }
+    changeBg();
+  };
+
+  function changeBg(){let i;do{i=Math.floor(Math.random()*3);}while(i===prevBg);
+                      prevBg=i;document.body.style.background=bgLuts[i];}
+
+  /* ==== 測定終了 ==== */
+  function finish(){
+    bar.onclick=null;
+
+    /* 背景別集計 */
+    const rowsBG=bgNames.map(n=>{
+      const w=taps.filter(t=>t.side==='white'&&t.background===n).map(t=>t.ratio);
+      const b=taps.filter(t=>t.side==='black'&&t.background===n).map(t=>t.ratio);
+      const R=(1-Math.min(...b))/Math.max(...w);
+      return {sessionId,date:dateISO,haze,background:n,
+              nWhite:w.length,meanWhite:avg(w).toFixed(4),
+              nBlack:b.length,meanBlack:avg(b).toFixed(4),
+              R:R.toFixed(6),DRL:(10*Math.log10(R)).toFixed(2)};});
+    const iCS1=((+rowsBG[0].meanWhite + +rowsBG[0].meanBlack)/2)
+               -((+rowsBG[2].meanWhite + +rowsBG[2].meanBlack)/2);
+    const iCS2=+rowsBG[0].DRL - +rowsBG[2].DRL;
+    const rowICS={sessionId,date:dateISO,haze,
+                  iCS1:iCS1.toFixed(4),iCS2:iCS2.toFixed(2)};
+    res.textContent=
+      `測定完了\nDRL(dark)=${rowsBG[0].DRL} dB\n`+
+      `DRL(bright)=${rowsBG[2].DRL} dB\niCS1=${rowICS.iCS1}\niCS2=${rowICS.iCS2}`;
+
+    /* ==== ボタン群 ==== */
+    const saveBtn=document.createElement('button');
+    saveBtn.textContent='CSV を保存';
+    saveBtn.onclick=()=>saveCsvs(rowsBG,rowICS,taps);
+    const nextBtn=document.createElement('button');
+    nextBtn.textContent='新しい測定を開始';
+    nextBtn.onclick=startSession;
+    res.after(saveBtn,nextBtn);
+  }
+
+  /* ==== CSV 保存 ==== */
+  function saveCsvs(rowsBG,rowICS,taps){
+    const bom='\uFEFF', dateTag=dateISO.slice(0,10).replace(/-/g,'');
+    download(bom+toCsv(taps),               `taps_${dateTag}_${sessionId}.csv`);
+    download(bom+toCsv(rowsBG),             `drl_background_${dateTag}_${sessionId}.csv`);
+    download(bom+toCsv([rowICS]),           `ics_${dateTag}_${sessionId}.csv`);
+  }
+  function toCsv(arr){const h=Object.keys(arr[0]);
+                      return h.join(',')+'\n'+arr.map(o=>h.map(k=>o[k]).join(',')).join('\n');}
+  function download(txt,name){
+    const url=URL.createObjectURL(new Blob([txt],{type:'text/csv;charset=utf-8;'}));
+    Object.assign(document.createElement('a'),{href:url,download:name}).click();
+    URL.revokeObjectURL(url);}
+  const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
+}
+</script>
+</body>
+</html>
