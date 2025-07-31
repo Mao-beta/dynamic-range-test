@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Dynamic Range Test</title>
-<!-- ピンチ＆ダブルタップズーム無効 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
   html,body{
@@ -29,14 +28,14 @@
   <div id="result"></div>
 
 <script>
-/* 古い iOS Safari のピンチジェスチャも抑止 */
+/* 把握用: 旧iOSのピンチジェスチャ抑止 */
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
   document.addEventListener(ev,e=>e.preventDefault(),{passive:false});
 });
 
 (function(){ startSession(); })();
 
-/* ────────── セッション開始 ────────── */
+/* ───────── セッション開始 ───────── */
 function startSession(){
 
   /* ==== メタ情報 ==== */
@@ -44,47 +43,48 @@ function startSession(){
   const sessionId = 'S'+Date.now();
   const dateISO   = new Date().toISOString();
 
-  /* ==== 背景色関連 ==== */
+  /* ==== 背景色定義 ==== */
   const bgLuts  = ['#262626','#808080','#e0e0e0'];   // 暗・中・明
   const bgNames = ['dark','mid','bright'];
 
-  /* ▽ 3色×7回・連続禁止のシーケンスを生成 ▽ */
-  const seqWhite = generateBgSeq();   // 長さ 21
-  const seqBlack = generateBgSeq();
-  let ptrWhite = 0, ptrBlack = 0;     // ポインタ
+  /* ==== 各21タップ用シーケンス生成 ==== */
+  const seqWhite = genSeq21();   // 白側
+  const seqBlack = genSeq21();   // 黒側
+  let idxWhite = 0, idxBlack = 0;
 
-  function generateBgSeq(){
-    const base = [];
-    for(let i=0;i<3;i++) for(let j=0;j<7;j++) base.push(i);
-    let seq;
-    do{
-      seq = [...base].sort(()=>Math.random()-0.5);
-    }while(hasAdjDup(seq));
-    return seq;
-    function hasAdjDup(arr){
-      for(let k=1;k<arr.length;k++) if(arr[k]===arr[k-1]) return true;
-      return false;
+  /* ★ 3色×7回・隣接なし生成アルゴリズム */
+  function genSeq21(){
+    const seq=[], colors=[0,1,2];
+    let prev=-1;
+    for(let g=0; g<7; g++){
+      let grp;
+      do{ grp=[...colors].sort(()=>Math.random()-0.5);}    // 3色ランダム順
+      while(grp[0]===prev);                                // 連続回避
+      seq.push(...grp);                                    // 長さ+3
+      prev=grp[2];                                         // 次グループ判定用
     }
+    return seq;  // len=21, 各色7回, 隣接なし
   }
 
   /* ==== 状態 & DOM ==== */
   const TOTAL = 21;
-  let phase = 'W';                    // 'W'→白 / 'B'→黒
-  const taps = [];
+  let phase='W';                  // 'W'→白21 → 'B'→黒21
+  const taps=[];
 
-  const bar = document.getElementById('bar');
-  const msg = document.getElementById('msg');
-  const res = document.getElementById('result');
-  res.textContent=''; document.querySelectorAll('button').forEach(b=>b.remove());
+  const bar=document.getElementById('bar');
+  const msg=document.getElementById('msg');
+  const res=document.getElementById('result');
+  res.textContent='';
+  document.querySelectorAll('button').forEach(b=>b.remove());
   msg.textContent='白側 1 / 21 をタップしてください';
 
-  /* 初期背景 */
+  /* 初期背景（白側1回目） */
   document.body.style.background = bgLuts[seqWhite[0]];
 
   /* ==== タップ処理 ==== */
   bar.onclick = e=>{
-    const ratio = +((e.clientX - bar.getBoundingClientRect().left) / bar.clientWidth).toFixed(6);
-    const bgIdx = (phase==='W') ? seqWhite[ptrWhite] : seqBlack[ptrBlack];
+    const ratio=+((e.clientX-bar.getBoundingClientRect().left)/bar.clientWidth).toFixed(6);
+    const bgIdx = (phase==='W') ? seqWhite[idxWhite] : seqBlack[idxBlack];
 
     taps.push({sessionId,date:dateISO,haze,
       tapSeq:taps.length+1,
@@ -92,45 +92,43 @@ function startSession(){
       background: bgNames[bgIdx],
       ratio});
 
-    /* ポインタ進行 */
     if(phase==='W'){
-      ptrWhite++;
-      if(ptrWhite < TOTAL) document.body.style.background = bgLuts[seqWhite[ptrWhite]];
-    }else{
-      ptrBlack++;
-      if(ptrBlack < TOTAL) document.body.style.background = bgLuts[seqBlack[ptrBlack]];
-    }
-
-    const nSide = phase==='W' ? ptrWhite : ptrBlack;
-    if(nSide < TOTAL){
-      msg.textContent = `${phase==='W'?'白側':'黒側'} ${nSide+1} / ${TOTAL} をタップしてください`;
-    }else{
-      if(phase==='W'){
-        alert('黒側スタート');
+      idxWhite++;
+      if(idxWhite < TOTAL){
+        document.body.style.background = bgLuts[seqWhite[idxWhite]];
+        msg.textContent = `白側 ${idxWhite+1} / ${TOTAL} をタップしてください`;
+      }else{
+        alert('黒側スタート');            // 切替ポップアップ
         phase='B';
-        msg.textContent='黒側 1 / 21 をタップしてください';
         document.body.style.background = bgLuts[seqBlack[0]];
+        msg.textContent='黒側 1 / 21 をタップしてください';
+      }
+    }else{
+      idxBlack++;
+      if(idxBlack < TOTAL){
+        document.body.style.background = bgLuts[seqBlack[idxBlack]];
+        msg.textContent = `黒側 ${idxBlack+1} / ${TOTAL} をタップしてください`;
       }else{
         finish();
       }
     }
   };
 
-  /* ────────── 測定終了 ────────── */
+  /* ───────── 測定終了 ───────── */
   function finish(){
     bar.onclick=null;
 
     /* 背景別集計（論文定義） */
     const rowsBG = bgNames.map(name=>{
-      const w = taps.filter(t=>t.side==='white'&&t.background===name).map(t=>t.ratio);
-      const b = taps.filter(t=>t.side==='black'&&t.background===name).map(t=>t.ratio);
+      const w=taps.filter(t=>t.side==='white'&&t.background===name).map(t=>t.ratio);
+      const b=taps.filter(t=>t.side==='black'&&t.background===name).map(t=>t.ratio);
 
       const meanW = avg(w);
       const meanB = avg(b);
-      const Lw = 1 - meanW;           // ratio→輝度
+      const Lw = 1 - meanW;
       const Lb = 1 - meanB;
       const R  = Lw / Lb;
-      const DRL= 10 * Math.log10(R);
+      const DRL= 10*Math.log10(R);
 
       return {
         sessionId,date:dateISO,haze,background:name,
@@ -141,15 +139,16 @@ function startSession(){
       };
     });
 
-    const dark = rowsBG[0], bright = rowsBG[2];
-    const meanDark = ( +dark.meanWhiteLum + +dark.meanBlackLum ) / 2;
-    const meanBright = ( +bright.meanWhiteLum + +bright.meanBlackLum ) / 2;
+    /* iCS 計算 */
+    const dark=rowsBG[0], bright=rowsBG[2];
+    const meanDark   =( +dark.meanWhiteLum + +dark.meanBlackLum )/2;
+    const meanBright =( +bright.meanWhiteLum + +bright.meanBlackLum )/2;
     const iCS1 = meanDark - meanBright;
     const iCS2 = +dark.DRL - +bright.DRL;
-    const rowICS = {sessionId,date:dateISO,haze,
+    const rowICS={sessionId,date:dateISO,haze,
       iCS1:iCS1.toFixed(4),iCS2:iCS2.toFixed(2)};
 
-    res.textContent =
+    res.textContent=
       `測定完了\nDRL(dark) = ${dark.DRL} dB\n`+
       `DRL(bright) = ${bright.DRL} dB\niCS1 = ${rowICS.iCS1}\niCS2 = ${rowICS.iCS2}`;
 
@@ -182,13 +181,16 @@ function startSession(){
   function downloadCsv(txt,name){
     const url=URL.createObjectURL(
       new Blob(['\uFEFF'+txt],{type:'text/csv;charset=utf-8;'}));
-    Object.assign(document.createElement('a'),{href:url,download:name}).click();
+    Object.assign(document.createElement('a'),
+      {href:url,download:name}).click();
     URL.revokeObjectURL(url);
   }
   const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
   const pad=n=>('0'+n).slice(-2);
-  function dateTag(){const d=new Date();
-    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;}
+  function dateTag(){
+    const d=new Date();
+    return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+  }
 }
 </script>
 </body>
