@@ -3,18 +3,16 @@
 <head>
 <meta charset="utf-8">
 <title>Dynamic Range Test</title>
-<!-- ズーム無効化 -->
+<!-- ピンチ＆ダブルタップズーム無効 -->
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
   html,body{
     margin:0;padding:0;height:100%;
     display:flex;flex-direction:column;
-    background:#7f7f7f;
-    font-family:sans-serif;
+    background:#7f7f7f;font-family:sans-serif;
     user-select:none;-webkit-user-select:none;
     touch-action:manipulation;
   }
-  /* 測定バー（枠なし） */
   #bar{
     flex:0 0 10vh;max-height:120px;margin:auto;width:85vw;border:none;
     background:linear-gradient(to right,#fff 0%,#000 100%);
@@ -31,100 +29,126 @@
   <div id="result"></div>
 
 <script>
-/* iOS 旧 Safari のピンチ抑止 */
+/* 古い iOS Safari のピンチジェスチャも抑止 */
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>{
   document.addEventListener(ev,e=>e.preventDefault(),{passive:false});
 });
 
 (function(){ startSession(); })();
 
-/* ───────── セッション開始 ───────── */
+/* ────────── セッション開始 ────────── */
 function startSession(){
-  const haze      = prompt('ヘイズ量（例: 1〜6, A, Low など）','1') || 'NA';
+
+  /* ==== メタ情報 ==== */
+  const haze      = prompt('ヘイズ量（1〜6, A, Low など）','1') || 'NA';
   const sessionId = 'S'+Date.now();
   const dateISO   = new Date().toISOString();
 
-  const bgLuts  = ['#262626','#808080','#e0e0e0'];     // 暗・中・明
+  /* ==== 背景色関連 ==== */
+  const bgLuts  = ['#262626','#808080','#e0e0e0'];   // 暗・中・明
   const bgNames = ['dark','mid','bright'];
-  const TOTAL   = 21;
 
-  let phase='W', prevBg=-1;
-  const taps=[];
+  /* ▽ 3色×7回・連続禁止のシーケンスを生成 ▽ */
+  const seqWhite = generateBgSeq();   // 長さ 21
+  const seqBlack = generateBgSeq();
+  let ptrWhite = 0, ptrBlack = 0;     // ポインタ
 
-  const bar=document.getElementById('bar');
-  const msg=document.getElementById('msg');
-  const res=document.getElementById('result');
+  function generateBgSeq(){
+    const base = [];
+    for(let i=0;i<3;i++) for(let j=0;j<7;j++) base.push(i);
+    let seq;
+    do{
+      seq = [...base].sort(()=>Math.random()-0.5);
+    }while(hasAdjDup(seq));
+    return seq;
+    function hasAdjDup(arr){
+      for(let k=1;k<arr.length;k++) if(arr[k]===arr[k-1]) return true;
+      return false;
+    }
+  }
+
+  /* ==== 状態 & DOM ==== */
+  const TOTAL = 21;
+  let phase = 'W';                    // 'W'→白 / 'B'→黒
+  const taps = [];
+
+  const bar = document.getElementById('bar');
+  const msg = document.getElementById('msg');
+  const res = document.getElementById('result');
   res.textContent=''; document.querySelectorAll('button').forEach(b=>b.remove());
   msg.textContent='白側 1 / 21 をタップしてください';
-  changeBg();
 
-  bar.onclick=e=>{
-    const ratio=+((e.clientX-bar.getBoundingClientRect().left)/bar.clientWidth).toFixed(6);
+  /* 初期背景 */
+  document.body.style.background = bgLuts[seqWhite[0]];
+
+  /* ==== タップ処理 ==== */
+  bar.onclick = e=>{
+    const ratio = +((e.clientX - bar.getBoundingClientRect().left) / bar.clientWidth).toFixed(6);
+    const bgIdx = (phase==='W') ? seqWhite[ptrWhite] : seqBlack[ptrBlack];
+
     taps.push({sessionId,date:dateISO,haze,
       tapSeq:taps.length+1,
-      side:phase==='W'?'white':'black',
-      background:bgNames[prevBg],ratio});
+      side: phase==='W' ? 'white':'black',
+      background: bgNames[bgIdx],
+      ratio});
 
-    const nSide=taps.filter(t=>t.side===(phase==='W'?'white':'black')).length;
-    if(nSide<TOTAL){
-      msg.textContent=`${phase==='W'?'白側':'黒側'} ${nSide+1} / ${TOTAL} をタップしてください`;
+    /* ポインタ進行 */
+    if(phase==='W'){
+      ptrWhite++;
+      if(ptrWhite < TOTAL) document.body.style.background = bgLuts[seqWhite[ptrWhite]];
+    }else{
+      ptrBlack++;
+      if(ptrBlack < TOTAL) document.body.style.background = bgLuts[seqBlack[ptrBlack]];
+    }
+
+    const nSide = phase==='W' ? ptrWhite : ptrBlack;
+    if(nSide < TOTAL){
+      msg.textContent = `${phase==='W'?'白側':'黒側'} ${nSide+1} / ${TOTAL} をタップしてください`;
     }else{
       if(phase==='W'){
-        alert('黒側スタート');          // ポップアップで切替
+        alert('黒側スタート');
         phase='B';
         msg.textContent='黒側 1 / 21 をタップしてください';
-      }else finish();
+        document.body.style.background = bgLuts[seqBlack[0]];
+      }else{
+        finish();
+      }
     }
-    changeBg();
   };
 
-  function changeBg(){let i;do{i=Math.floor(Math.random()*3);}while(i===prevBg);
-    prevBg=i;document.body.style.background=bgLuts[i];}
-
-  /* ───────── 測定終了 ───────── */
+  /* ────────── 測定終了 ────────── */
   function finish(){
     bar.onclick=null;
 
-    /* 背景別集計（平均 → ratio→輝度 へ変換） */
+    /* 背景別集計（論文定義） */
     const rowsBG = bgNames.map(name=>{
-      const wRatios = taps.filter(t=>t.side==='white'&&t.background===name).map(t=>t.ratio);
-      const bRatios = taps.filter(t=>t.side==='black'&&t.background===name).map(t=>t.ratio);
+      const w = taps.filter(t=>t.side==='white'&&t.background===name).map(t=>t.ratio);
+      const b = taps.filter(t=>t.side==='black'&&t.background===name).map(t=>t.ratio);
 
-      const meanWratio = avg(wRatios);
-      const meanBratio = avg(bRatios);
-
-      /* ★ ratio (0=左=白,1=右=黒) → 輝度 L = 1 - r */
-      const Lwhite = 1 - meanWratio;
-      const Lblack = 1 - meanBratio;
-
-      /* ★ 論文式: R = Lwhite / Lblack */
-      const R = Lwhite / Lblack;
-      const DRL = 10 * Math.log10(R);
+      const meanW = avg(w);
+      const meanB = avg(b);
+      const Lw = 1 - meanW;           // ratio→輝度
+      const Lb = 1 - meanB;
+      const R  = Lw / Lb;
+      const DRL= 10 * Math.log10(R);
 
       return {
         sessionId,date:dateISO,haze,background:name,
-        nWhite:wRatios.length,meanWhite:meanWratio.toFixed(4),
-        nBlack:bRatios.length,meanBlack:meanBratio.toFixed(4),
-        meanWhiteLum:Lwhite.toFixed(4),       /* ★ 追加:輝度 */
-        meanBlackLum:Lblack.toFixed(4),       /* ★ */
+        nWhite:w.length,meanWhite:meanW.toFixed(4),
+        nBlack:b.length,meanBlack:meanB.toFixed(4),
+        meanWhiteLum:Lw.toFixed(4),meanBlackLum:Lb.toFixed(4),
         R:R.toFixed(6),DRL:DRL.toFixed(2)
       };
     });
 
-    /* ★ iCS1, iCS2 の計算を輝度・DRLで実施 */
-    const dark   = rowsBG[0];   // 暗背景
-    const bright = rowsBG[2];   // 明背景
-    const meanDark   = ( +dark.meanWhiteLum   + +dark.meanBlackLum ) / 2;
+    const dark = rowsBG[0], bright = rowsBG[2];
+    const meanDark = ( +dark.meanWhiteLum + +dark.meanBlackLum ) / 2;
     const meanBright = ( +bright.meanWhiteLum + +bright.meanBlackLum ) / 2;
     const iCS1 = meanDark - meanBright;
     const iCS2 = +dark.DRL - +bright.DRL;
+    const rowICS = {sessionId,date:dateISO,haze,
+      iCS1:iCS1.toFixed(4),iCS2:iCS2.toFixed(2)};
 
-    const rowICS = {
-      sessionId,date:dateISO,haze,
-      iCS1:iCS1.toFixed(4),iCS2:iCS2.toFixed(2)
-    };
-
-    /* 結果表示 */
     res.textContent =
       `測定完了\nDRL(dark) = ${dark.DRL} dB\n`+
       `DRL(bright) = ${bright.DRL} dB\niCS1 = ${rowICS.iCS1}\niCS2 = ${rowICS.iCS2}`;
@@ -137,14 +161,14 @@ function startSession(){
     createSave('iCS CSV を保存', [rowICS],
       `ics_${dateTag()}_${sessionId}.csv`);
 
-    /* 次の測定 */
+    /* 次回測定 */
     const nextBtn=document.createElement('button');
     nextBtn.textContent='新しい測定を開始';
     nextBtn.onclick=startSession;
     res.after(nextBtn);
   }
 
-  /* 共有ヘルパ */
+  /* ==== ヘルパ ==== */
   function createSave(label,data,filename){
     const btn=document.createElement('button');
     btn.textContent=label;
@@ -152,15 +176,13 @@ function startSession(){
     res.after(btn);
   }
   function toCsv(arr){
-    const hdr=Object.keys(arr[0]);
-    return hdr.join(',')+'\n'+arr.map(o=>hdr.map(k=>o[k]).join(',')).join('\n');
+    const h=Object.keys(arr[0]);
+    return h.join(',')+'\n'+arr.map(o=>h.map(k=>o[k]).join(',')).join('\n');
   }
   function downloadCsv(txt,name){
-    const bom='\uFEFF';
     const url=URL.createObjectURL(
-      new Blob([bom+txt],{type:'text/csv;charset=utf-8;'}));
-    Object.assign(document.createElement('a'),
-      {href:url,download:name}).click();
+      new Blob(['\uFEFF'+txt],{type:'text/csv;charset=utf-8;'}));
+    Object.assign(document.createElement('a'),{href:url,download:name}).click();
     URL.revokeObjectURL(url);
   }
   const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
